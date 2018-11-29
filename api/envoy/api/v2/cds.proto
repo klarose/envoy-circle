@@ -558,4 +558,13 @@ message UpstreamBindConfig {
 message UpstreamConnectionOptions {
   // If set then set SO_KEEPALIVE on the socket to enable TCP Keepalives.
   core.TcpKeepalive tcp_keepalive = 1;
+
+  // If true, the source address of the origin is spoofed on the connection to the upstream.
+  // [#not-implemented-hide:] Hide from docs.
+  bool src_transparent = 2;
+
+  // If non-zero, set the SO_MARK option on the upstream connection's socket. Allows matching on
+  // e.g. 'ip rule' or 'iptables'.
+  // [#proto-status: draft] Still working on this.
+  uint32 mark = 3;
 }

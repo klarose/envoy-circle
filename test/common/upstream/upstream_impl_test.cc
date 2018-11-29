@@ -13,12 +13,15 @@
 #include "common/config/metadata.h"
 #include "common/json/config_schemas.h"
 #include "common/json/json_loader.h"
+#include "common/network/address_impl.h"
+#include "common/network/socket_option_impl.h"
 #include "common/network/utility.h"
 #include "common/upstream/upstream_impl.h"
 
 #include "server/transport_socket_config_impl.h"
 
 #include "test/common/upstream/utility.h"
+#include "test/mocks/api/mocks.h"
 #include "test/mocks/common.h"
 #include "test/mocks/local_info/mocks.h"
 #include "test/mocks/network/mocks.h"
@@ -26,6 +29,7 @@
 #include "test/mocks/ssl/mocks.h"
 #include "test/mocks/upstream/mocks.h"
 #include "test/test_common/registry.h"
+#include "test/test_common/threadsafe_singleton_injector.h"
 #include "test/test_common/utility.h"
 
 #include "gmock/gmock.h"
@@ -1599,6 +1603,11 @@ TEST(PrioritySet, Extend) {
   }
 }
 
+#define CHECK_OPTION_SUPPORTED(option)                                                             \
+  if (!option.has_value()) {                                                                       \
+    return;                                                                                        \
+  }
+
 class ClusterInfoImplTest : public testing::Test {
 public:
   std::unique_ptr<StrictDnsClusterImpl> makeCluster(const std::string& yaml) {
@@ -1625,6 +1634,18 @@ public:
   envoy::api::v2::Cluster cluster_config_;
   Envoy::Stats::ScopePtr scope_;
   std::unique_ptr<Server::Configuration::TransportSocketFactoryContextImpl> factory_context_;
+
+protected:
+  TestThreadsafeSingletonInjector<Api::OsSysCallsImpl> os_calls_{[this]() {
+    // Before injecting OsSysCallsImpl, make sure validateIpv{4,6}Supported is called so the static
+    // bool is initialized without requiring to mock ::socket and ::close. :( :(
+    std::make_unique<Envoy::Network::Address::Ipv4Instance>("1.2.3.4", 5678);
+    std::make_unique<Envoy::Network::Address::Ipv6Instance>("::1:2:3:4", 5678);
+    return &os_sys_calls_mock_;
+  }()};
+
+  testing::NiceMock<Envoy::Network::MockListenSocket> socket_mock_;
+  Api::MockOsSysCalls os_sys_calls_mock_;
 };
 
 struct Foo : public Envoy::Config::TypedMetadata::Object {};
@@ -1878,6 +1899,65 @@ TEST_F(ClusterInfoImplTest, ExtensionProtocolOptionsForFilterWithOptions) {
     // Same pointer
     EXPECT_EQ(stored_options.get(), protocol_options.get());
   }
+}
+
+TEST_F(ClusterInfoImplTest, TestNoSocketOptionsDefault) {
+  auto cluster = makeCluster(strictDnsClusterWithAttrYaml("" /* no extra options */));
+  auto options = cluster->info()->clusterSocketOptions();
+
+  EXPECT_EQ(nullptr, options);
+}
+
+TEST_F(ClusterInfoImplTest, TestMarkSocketOptions) {
+  auto cluster = makeCluster(strictDnsClusterWithAttrYaml(R"EOF(
+    upstream_connection_options:
+      mark: 145
+  )EOF"));
+  auto options = cluster->info()->clusterSocketOptions();
+
+  const auto expected_option = ENVOY_SOCKET_SO_MARK;
+  CHECK_OPTION_SUPPORTED(expected_option);
+  const int type = expected_option.value().first;
+  const int option = expected_option.value().second;
+
+  EXPECT_CALL(os_sys_calls_mock_, setsockopt_(_, _, _, _, sizeof(int)))
+      .WillOnce(Invoke([type, option](int, int input_type, int input_option, const void* optval,
+                                      socklen_t) -> int {
+        EXPECT_EQ(145, *static_cast<const int*>(optval));
+        EXPECT_EQ(type, input_type);
+        EXPECT_EQ(option, input_option);
+        return 0;
+      }));
+
+  Envoy::Network::Socket::applyOptions(options, socket_mock_,
+                                       envoy::api::v2::core::SocketOption::STATE_PREBIND);
+}
+
+TEST_F(ClusterInfoImplTest, TestTransparentSocketOptions) {
+  auto cluster = makeCluster(strictDnsClusterWithAttrYaml(R"EOF(
+    upstream_connection_options:
+      src_transparent: true
+  )EOF"));
+  auto options = cluster->info()->clusterSocketOptions();
+
+  const auto expected_option = ENVOY_SOCKET_IP_TRANSPARENT;
+  CHECK_OPTION_SUPPORTED(expected_option);
+  const int type = expected_option.value().first;
+  const int option = expected_option.value().second;
+  socket_mock_.local_address_ =
+      std::make_unique<Envoy::Network::Address::Ipv4Instance>("1.2.3.4", 5678);
+
+  EXPECT_CALL(os_sys_calls_mock_, setsockopt_(_, _, _, _, sizeof(int)))
+      .WillOnce(Invoke([type, option](int, int input_type, int input_option, const void* optval,
+                                      socklen_t) -> int {
+        EXPECT_EQ(type, input_type);
+        EXPECT_EQ(option, input_option);
+        EXPECT_EQ(1, *static_cast<const int*>(optval));
+        return 0;
+      }));
+
+  Envoy::Network::Socket::applyOptions(options, socket_mock_,
+                                       envoy::api::v2::core::SocketOption::STATE_PREBIND);
 }
 
 // Validate empty singleton for HostsPerLocalityImpl.
