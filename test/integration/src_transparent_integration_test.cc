@@ -4,6 +4,9 @@
 
 namespace Envoy {
 
+SrcTransparentIntegrationTest::~SrcTransparentIntegrationTest() {
+  cleanupConnections();
+}
 void SrcTransparentIntegrationTest::enableSrcTransparency(size_t cluster_index) {
     config_helper_.addConfigModifier([this, cluster_index](envoy::config::bootstrap::v2::Bootstrap&) {
       //auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(cluster_index);
@@ -58,6 +61,24 @@ void SrcTransparentIntegrationTest::sendHeaderOnlyResponse(size_t upstream_index
   EXPECT_TRUE(expected_response.complete());
 }
 
+void SrcTransparentIntegrationTest::cleanupConnections() {
+  // the order here is important. See cleanupUpstreamAndDownstream
+  std::for_each(parallel_connections_.begin(), parallel_connections_.end(), [](auto& connection) {
+    auto result = connection->close();
+    RELEASE_ASSERT(result, result.message());
+  });
+  std::for_each(parallel_connections_.begin(), parallel_connections_.end(), [](auto& connection) {
+    auto result = connection->waitForDisconnect();
+    RELEASE_ASSERT(result, result.message());
+  });
+  std::for_each(parallel_clients_.begin(), parallel_clients_.end(), [](auto& client) {
+    client->close();
+  });
+
+  parallel_requests_.clear();
+  parallel_connections_.clear();
+}
+
 TEST_F(SrcTransparentIntegrationTest, basicTransparency) {
   auto creator = getSourceIpConnectionCreator("127.0.0.2");
   enableSrcTransparency(0);
@@ -90,44 +111,20 @@ TEST_F(SrcTransparentIntegrationTest, backToBackConnectionsDifferentIp) {
 
 TEST_F(SrcTransparentIntegrationTest, parallelDownstreamParallelUpstream) {
   enableSrcTransparency(0);
-
-  auto creator = getSourceIpConnectionCreator("127.0.0.2");
   initialize();
-  Http::TestHeaderMapImpl request_headers{{":method", "GET"},
-                                          {":path", "/test/long/url"},
-                                          {":scheme", "http"},
-                                          {":authority", "host"},
-                                          {"x-lyft-user-id", "123"}};
-  sendHeaderOnlyRequest(creator, request_headers);
-  sendHeaderOnlyRequest(creator, request_headers);
+  auto creator = getSourceIpConnectionCreator("127.0.0.2");
+  sendHeaderOnlyRequest(creator, default_request_headers_);
+  sendHeaderOnlyRequest(creator, default_request_headers_);
   establishUpstreamInformation(2);
   sendHeaderOnlyResponse(0, *parallel_responses_[0], default_response_headers_);
   sendHeaderOnlyResponse(1, *parallel_responses_[1], default_response_headers_);
+
   EXPECT_TRUE(parallel_requests_[0]->complete());
   EXPECT_TRUE(parallel_requests_[1]->complete());
 
   auto expected_ip = Network::Utility::parseInternetAddress("127.0.0.2");
   EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[0]->ip()->ipv4()->address());
   EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[1]->ip()->ipv4()->address());
-  {
-    // from cleanupUpstreamAndDownstream()
-    auto result = parallel_connections_[0]->close();
-    RELEASE_ASSERT(result, result.message());
-    result = parallel_connections_[1]->close();
-    RELEASE_ASSERT(result, result.message());
-    result = parallel_connections_[0]->waitForDisconnect();
-    RELEASE_ASSERT(result, result.message());
-    result = parallel_connections_[1]->waitForDisconnect();
-    RELEASE_ASSERT(result, result.message());
-    parallel_clients_[0]->close();
-    parallel_clients_[1]->close();
-  }
-  {
-    //from ~HttpIntegrationTest
-    parallel_requests_.clear();
-    parallel_connections_.clear();
-    fake_upstreams_.clear();
-  }
 }
 
 TEST_F(SrcTransparentIntegrationTest, parallelDownstreamSameUpstream) {
@@ -138,15 +135,11 @@ TEST_F(SrcTransparentIntegrationTest, parallelDownstreamSameUpstream) {
       auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(0);
       cluster->mutable_circuit_breakers()->add_thresholds()->mutable_max_connections()->set_value(1);
   });
-  auto creator = getSourceIpConnectionCreator("127.0.0.2");
+
   initialize();
-  Http::TestHeaderMapImpl request_headers{{":method", "GET"},
-                                          {":path", "/test/long/url"},
-                                          {":scheme", "http"},
-                                          {":authority", "host"},
-                                          {"x-lyft-user-id", "123"}};
-  sendHeaderOnlyRequest(creator, request_headers);
-  sendHeaderOnlyRequest(creator, request_headers);
+  auto creator = getSourceIpConnectionCreator("127.0.0.2");
+  sendHeaderOnlyRequest(creator, default_request_headers_);
+  sendHeaderOnlyRequest(creator, default_request_headers_);
   establishUpstreamInformation(1);
   sendHeaderOnlyResponse(0, *parallel_responses_[0], default_response_headers_);
   sendHeaderOnlyResponse(0, *parallel_responses_[1], default_response_headers_);
@@ -154,20 +147,55 @@ TEST_F(SrcTransparentIntegrationTest, parallelDownstreamSameUpstream) {
 
   auto expected_ip = Network::Utility::parseInternetAddress("127.0.0.2");
   EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[0]->ip()->ipv4()->address());
-  {
-    // from cleanupUpstreamAndDownstream()
-    auto result =  parallel_connections_[0]->close();
-    RELEASE_ASSERT(result, result.message());
-    result =  parallel_connections_[0]->waitForDisconnect();
-    RELEASE_ASSERT(result, result.message());
-    parallel_clients_[0]->close();
-    parallel_clients_[1]->close();
-  }
-  {
-    //from ~HttpIntegrationTest
-    parallel_requests_.clear();
-    parallel_connections_.clear();
-    fake_upstreams_.clear();
-  }
+}
+
+TEST_F(SrcTransparentIntegrationTest, parallelDownstreamParallelUpstreamDifferentIPs) {
+  enableSrcTransparency(0);
+  initialize();
+  auto creator1 = getSourceIpConnectionCreator("127.0.0.2");
+  auto creator2 = getSourceIpConnectionCreator("127.0.1.3");
+  sendHeaderOnlyRequest(creator1, default_request_headers_);
+  sendHeaderOnlyRequest(creator2, default_request_headers_);
+  establishUpstreamInformation(2);
+  sendHeaderOnlyResponse(0, *parallel_responses_[0], default_response_headers_);
+  sendHeaderOnlyResponse(1, *parallel_responses_[1], default_response_headers_);
+
+  EXPECT_TRUE(parallel_requests_[0]->complete());
+  EXPECT_TRUE(parallel_requests_[1]->complete());
+
+  auto expected_ip1 = Network::Utility::parseInternetAddress("127.0.0.2");
+  auto expected_ip2 = Network::Utility::parseInternetAddress("127.0.1.3");
+  EXPECT_EQ(expected_ip1->ip()->ipv4()->address(), parallel_addresses_[0]->ip()->ipv4()->address());
+  EXPECT_EQ(expected_ip2->ip()->ipv4()->address(), parallel_addresses_[1]->ip()->ipv4()->address());
+}
+
+// this test differs from parallelDownstreamSameUpstream in that the IPs are different, which should
+// force it to create new connections.
+TEST_F(SrcTransparentIntegrationTest, parallelDownstreamSerialUpstream) {
+  enableSrcTransparency(0);
+
+  // Force use of the same upstream connection by only allowing one at a time.
+  config_helper_.addConfigModifier([this](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
+      auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(0);
+      cluster->mutable_circuit_breakers()->add_thresholds()->mutable_max_connections()->set_value(1);
+  });
+
+  initialize();
+  auto creator1 = getSourceIpConnectionCreator("127.1.0.2");
+  auto creator2 = getSourceIpConnectionCreator("127.0.1.4");
+  sendHeaderOnlyRequest(creator1, default_request_headers_);
+  sendHeaderOnlyRequest(creator2, default_request_headers_);
+  establishUpstreamInformation(1);
+  sendHeaderOnlyResponse(0, *parallel_responses_[0], default_response_headers_);
+  EXPECT_TRUE(parallel_requests_[0]->complete());
+  // There'll be a new connection now, but we need to wait for the first to finish!
+  establishUpstreamInformation(1);
+  sendHeaderOnlyResponse(1, *parallel_responses_[1], default_response_headers_);
+  EXPECT_TRUE(parallel_requests_[1]->complete());
+
+  auto expected_ip1 = Network::Utility::parseInternetAddress("127.1.0.2");
+  auto expected_ip2 = Network::Utility::parseInternetAddress("127.0.1.4");
+  EXPECT_EQ(expected_ip1->ip()->ipv4()->address(), parallel_addresses_[0]->ip()->ipv4()->address());
+  EXPECT_EQ(expected_ip2->ip()->ipv4()->address(), parallel_addresses_[1]->ip()->ipv4()->address());
 }
 }

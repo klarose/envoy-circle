@@ -31,6 +31,8 @@ public:
           filter_chain->mutable_use_proxy_proto()->set_value(true);
         });
   }
+
+  ~SrcTransparentIntegrationTest();
 protected:
   void enableSrcTransparency(size_t cluster_index = 0);
   ConnectionCreationFunction getSourceIpConnectionCreator(const std::string& ip);
@@ -52,11 +54,17 @@ protected:
   //! parallel_connections_
   void establishUpstreamInformation(size_t num_upstreams);
 
-
+  void cleanupConnections();
   std::vector<IntegrationCodecClientPtr> parallel_clients_;
   std::vector<IntegrationStreamDecoderPtr> parallel_responses_;
   std::vector<FakeStreamPtr> parallel_requests_;
   std::vector<Network::Address::InstanceConstSharedPtr> parallel_addresses_;
   std::vector<FakeHttpConnectionPtr> parallel_connections_;
+  Http::TestHeaderMapImpl default_request_headers_ = Http::TestHeaderMapImpl{
+                                                {":method", "GET"},
+                                                {":path", "/test/long/url"},
+                                                {":scheme", "http"},
+                                                {":authority", "host"},
+                                                {"x-lyft-user-id", "123"}};
 };
 } // namespace Envoy
