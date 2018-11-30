@@ -41,6 +41,23 @@ void SrcTransparentIntegrationTest::sendHeaderOnlyRequest(
   parallel_responses_.emplace_back(std::move(response));
 }
 
+void SrcTransparentIntegrationTest::establishUpstreamInformation(size_t num_upstreams) {
+  for(size_t i = 0; i < num_upstreams; i++) {
+    waitForNextUpstreamRequest();
+    parallel_requests_.emplace_back(std::move(upstream_request_));
+    parallel_addresses_.push_back(first_upstream_remote_address_);
+    parallel_connections_.emplace_back(std::move(fake_upstream_connection_));
+  }
+}
+
+void SrcTransparentIntegrationTest::sendHeaderOnlyResponse(size_t upstream_index,
+                                                           IntegrationStreamDecoder& expected_response,
+                                                           const Http::HeaderMapImpl& headers) {
+  parallel_requests_[upstream_index]->encodeHeaders(headers, true /* no body => close */);
+  expected_response.waitForEndStream();
+  EXPECT_TRUE(expected_response.complete());
+}
+
 TEST_F(SrcTransparentIntegrationTest, basicTransparency) {
   auto creator = getSourceIpConnectionCreator("127.0.0.2");
   enableSrcTransparency(0);
@@ -83,50 +100,36 @@ TEST_F(SrcTransparentIntegrationTest, parallelDownstreamParallelUpstream) {
                                           {"x-lyft-user-id", "123"}};
   sendHeaderOnlyRequest(creator, request_headers);
   sendHeaderOnlyRequest(creator, request_headers);
-  waitForNextUpstreamRequest();
-  auto first_request = std::move(upstream_request_);
-  // Send response headers, and end_stream if there is no response body.
-  auto first_ip = first_upstream_remote_address_;
-  auto first_upstream_connection = std::move(fake_upstream_connection_);
-  waitForNextUpstreamRequest();
-  auto second_request = std::move(upstream_request_);
-  auto second_ip = first_upstream_remote_address_;
-  auto second_upstream_connection = std::move(fake_upstream_connection_);
+  establishUpstreamInformation(2);
+  sendHeaderOnlyResponse(0, *parallel_responses_[0], default_response_headers_);
+  sendHeaderOnlyResponse(1, *parallel_responses_[1], default_response_headers_);
+  EXPECT_TRUE(parallel_requests_[0]->complete());
+  EXPECT_TRUE(parallel_requests_[1]->complete());
 
-  first_request->encodeHeaders(default_response_headers_, true /* no body => close */);
-  second_request->encodeHeaders(default_response_headers_ , true /* no body => close */);
-  parallel_responses_[0]->waitForEndStream();
-  parallel_responses_[1]->waitForEndStream();
-  EXPECT_TRUE(first_request->complete());
-  EXPECT_TRUE(second_request->complete());
-
-  EXPECT_TRUE(parallel_responses_[0]->complete());
-  EXPECT_TRUE(parallel_responses_[1]->complete());
   auto expected_ip = Network::Utility::parseInternetAddress("127.0.0.2");
-  EXPECT_EQ(expected_ip->ip()->ipv4()->address(), first_ip->ip()->ipv4()->address());
-  EXPECT_EQ(expected_ip->ip()->ipv4()->address(), second_ip->ip()->ipv4()->address());
+  EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[0]->ip()->ipv4()->address());
+  EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[1]->ip()->ipv4()->address());
   {
     // from cleanupUpstreamAndDownstream()
-    auto result = first_upstream_connection->close();
+    auto result = parallel_connections_[0]->close();
     RELEASE_ASSERT(result, result.message());
-    result = second_upstream_connection->close();
+    result = parallel_connections_[1]->close();
     RELEASE_ASSERT(result, result.message());
-    result = first_upstream_connection->waitForDisconnect();
+    result = parallel_connections_[0]->waitForDisconnect();
     RELEASE_ASSERT(result, result.message());
-    result = second_upstream_connection->waitForDisconnect();
+    result = parallel_connections_[1]->waitForDisconnect();
     RELEASE_ASSERT(result, result.message());
     parallel_clients_[0]->close();
     parallel_clients_[1]->close();
   }
   {
     //from ~HttpIntegrationTest
-    first_request.reset();
-    second_request.reset();
-    first_upstream_connection.reset();
-    second_upstream_connection.reset();
+    parallel_requests_.clear();
+    parallel_connections_.clear();
     fake_upstreams_.clear();
   }
 }
+
 TEST_F(SrcTransparentIntegrationTest, parallelDownstreamSameUpstream) {
   enableSrcTransparency(0);
 
@@ -144,35 +147,26 @@ TEST_F(SrcTransparentIntegrationTest, parallelDownstreamSameUpstream) {
                                           {"x-lyft-user-id", "123"}};
   sendHeaderOnlyRequest(creator, request_headers);
   sendHeaderOnlyRequest(creator, request_headers);
-  waitForNextUpstreamRequest();
-  auto first_request = std::move(upstream_request_);
-  // Send response headers, and end_stream if there is no response body.
-  auto first_ip = first_upstream_remote_address_;
-  auto first_upstream_connection = std::move(fake_upstream_connection_);
-  first_request->encodeHeaders(default_response_headers_, true /* no body => close */);
-  parallel_responses_[0]->waitForEndStream();
+  establishUpstreamInformation(1);
+  sendHeaderOnlyResponse(0, *parallel_responses_[0], default_response_headers_);
+  sendHeaderOnlyResponse(0, *parallel_responses_[1], default_response_headers_);
+  EXPECT_TRUE(parallel_requests_[0]->complete());
 
-  first_request->encodeHeaders(default_response_headers_, true /* no body => close */);
-  parallel_responses_[1]->waitForEndStream();
-  EXPECT_TRUE(first_request->complete());
-
-  EXPECT_TRUE(parallel_responses_[0]->complete());
-  EXPECT_TRUE(parallel_responses_[1]->complete());
   auto expected_ip = Network::Utility::parseInternetAddress("127.0.0.2");
-  EXPECT_EQ(expected_ip->ip()->ipv4()->address(), first_ip->ip()->ipv4()->address());
+  EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[0]->ip()->ipv4()->address());
   {
     // from cleanupUpstreamAndDownstream()
-    auto result = first_upstream_connection->close();
+    auto result =  parallel_connections_[0]->close();
     RELEASE_ASSERT(result, result.message());
-    result = first_upstream_connection->waitForDisconnect();
+    result =  parallel_connections_[0]->waitForDisconnect();
     RELEASE_ASSERT(result, result.message());
     parallel_clients_[0]->close();
     parallel_clients_[1]->close();
   }
   {
     //from ~HttpIntegrationTest
-    first_request.reset();
-    first_upstream_connection.reset();
+    parallel_requests_.clear();
+    parallel_connections_.clear();
     fake_upstreams_.clear();
   }
 }

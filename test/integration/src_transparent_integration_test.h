@@ -1,6 +1,7 @@
 #pragma once
 #include <functional>
 
+#include "envoy/network/address.h"
 #include "envoy/network/connection.h"
 
 #include "common/http/codec_client.h"
@@ -39,8 +40,23 @@ protected:
   //! and response are stored in @c parallel_clients_ and parallel_responses_
   void sendHeaderOnlyRequest(ConnectionCreationFunction creator, const Http::HeaderMap& headers);
 
+  // Sends a response comprising @c headers down the first upstream hosts's upstream_index-th
+  // connection. Waits for the response to be received by @c expected_response.
+  // Note that we decouple response and upstream_index here so that multiple downstream requests
+  // can be muxed to the same upstream connection.
+  void sendHeaderOnlyResponse(size_t upstream_index, IntegrationStreamDecoder& expected_response,
+                              const Http::HeaderMapImpl& headers);
+
+  //! Waits for @c num_upstream requests to come into the first upstream host.
+  //! For each connection, stores their information in parallel_requests_, parallel_addresses_ and
+  //! parallel_connections_
+  void establishUpstreamInformation(size_t num_upstreams);
+
 
   std::vector<IntegrationCodecClientPtr> parallel_clients_;
   std::vector<IntegrationStreamDecoderPtr> parallel_responses_;
+  std::vector<FakeStreamPtr> parallel_requests_;
+  std::vector<Network::Address::InstanceConstSharedPtr> parallel_addresses_;
+  std::vector<FakeHttpConnectionPtr> parallel_connections_;
 };
 } // namespace Envoy
