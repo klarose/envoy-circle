@@ -32,8 +32,15 @@ public:
   }
 protected:
   void enableSrcTransparency(size_t cluster_index = 0);
-  void sendAndReceiveRepeatable(ConnectionCreationFunction creator);
-
   ConnectionCreationFunction getSourceIpConnectionCreator(const std::string& ip);
+
+  void sendAndReceiveRepeatable(ConnectionCreationFunction creator);
+  //! Connects to the server using @c creator, then sends the headers from @c. The resulting client
+  //! and response are stored in @c parallel_clients_ and parallel_responses_
+  void sendHeaderOnlyRequest(ConnectionCreationFunction creator, const Http::HeaderMap& headers);
+
+
+  std::vector<IntegrationCodecClientPtr> parallel_clients_;
+  std::vector<IntegrationStreamDecoderPtr> parallel_responses_;
 };
 } // namespace Envoy

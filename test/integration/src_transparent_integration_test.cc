@@ -33,6 +33,14 @@ void SrcTransparentIntegrationTest::sendAndReceiveRepeatable(ConnectionCreationF
   fake_upstream_connection_ = nullptr;
 }
 
+void SrcTransparentIntegrationTest::sendHeaderOnlyRequest(
+    ConnectionCreationFunction creator, const Http::HeaderMap& headers) {
+  auto codec_client = makeHttpConnection(creator());
+  auto response = codec_client->makeHeaderOnlyRequest(headers);
+  parallel_clients_.emplace_back(std::move(codec_client));
+  parallel_responses_.emplace_back(std::move(response));
+}
+
 TEST_F(SrcTransparentIntegrationTest, basicTransparency) {
   auto creator = getSourceIpConnectionCreator("127.0.0.2");
   enableSrcTransparency(0);
@@ -62,7 +70,8 @@ TEST_F(SrcTransparentIntegrationTest, backToBackConnectionsDifferentIp) {
   EXPECT_EQ(expected_ip->ip()->ipv4()->address(),
             first_upstream_remote_address_->ip()->ipv4()->address());
 }
-TEST_F(SrcTransparentIntegrationTest, parallelConnectionsSameIp) {
+
+TEST_F(SrcTransparentIntegrationTest, parallelDownstreamParallelUpstream) {
   enableSrcTransparency(0);
 
   auto creator = getSourceIpConnectionCreator("127.0.0.2");
@@ -72,10 +81,8 @@ TEST_F(SrcTransparentIntegrationTest, parallelConnectionsSameIp) {
                                           {":scheme", "http"},
                                           {":authority", "host"},
                                           {"x-lyft-user-id", "123"}};
-  auto codec_client1 = makeHttpConnection(creator());
-  auto codec_client2 = makeHttpConnection(creator());
-  auto response1 = codec_client1->makeHeaderOnlyRequest(request_headers);
-  auto response2 = codec_client2->makeHeaderOnlyRequest(request_headers);
+  sendHeaderOnlyRequest(creator, request_headers);
+  sendHeaderOnlyRequest(creator, request_headers);
   waitForNextUpstreamRequest();
   auto first_request = std::move(upstream_request_);
   // Send response headers, and end_stream if there is no response body.
@@ -88,15 +95,17 @@ TEST_F(SrcTransparentIntegrationTest, parallelConnectionsSameIp) {
 
   first_request->encodeHeaders(default_response_headers_, true /* no body => close */);
   second_request->encodeHeaders(default_response_headers_ , true /* no body => close */);
-  response1->waitForEndStream();
-  response2->waitForEndStream();
+  parallel_responses_[0]->waitForEndStream();
+  parallel_responses_[1]->waitForEndStream();
   EXPECT_TRUE(first_request->complete());
   EXPECT_TRUE(second_request->complete());
 
-  EXPECT_TRUE(response1->complete());
-  EXPECT_TRUE(response2->complete());
+  EXPECT_TRUE(parallel_responses_[0]->complete());
+  EXPECT_TRUE(parallel_responses_[1]->complete());
+  auto expected_ip = Network::Utility::parseInternetAddress("127.0.0.2");
+  EXPECT_EQ(expected_ip->ip()->ipv4()->address(), first_ip->ip()->ipv4()->address());
+  EXPECT_EQ(expected_ip->ip()->ipv4()->address(), second_ip->ip()->ipv4()->address());
   {
-  #if 0
     // from cleanupUpstreamAndDownstream()
     auto result = first_upstream_connection->close();
     RELEASE_ASSERT(result, result.message());
@@ -106,9 +115,8 @@ TEST_F(SrcTransparentIntegrationTest, parallelConnectionsSameIp) {
     RELEASE_ASSERT(result, result.message());
     result = second_upstream_connection->waitForDisconnect();
     RELEASE_ASSERT(result, result.message());
-  #endif
-    codec_client1->close();
-    codec_client2->close();
+    parallel_clients_[0]->close();
+    parallel_clients_[1]->close();
   }
   {
     //from ~HttpIntegrationTest
@@ -119,5 +127,53 @@ TEST_F(SrcTransparentIntegrationTest, parallelConnectionsSameIp) {
     fake_upstreams_.clear();
   }
 }
+TEST_F(SrcTransparentIntegrationTest, parallelDownstreamSameUpstream) {
+  enableSrcTransparency(0);
 
+  // Force use of the same upstream connection by only allowing one at a time.
+  config_helper_.addConfigModifier([this](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
+      auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(0);
+      cluster->mutable_circuit_breakers()->add_thresholds()->mutable_max_connections()->set_value(1);
+  });
+  auto creator = getSourceIpConnectionCreator("127.0.0.2");
+  initialize();
+  Http::TestHeaderMapImpl request_headers{{":method", "GET"},
+                                          {":path", "/test/long/url"},
+                                          {":scheme", "http"},
+                                          {":authority", "host"},
+                                          {"x-lyft-user-id", "123"}};
+  sendHeaderOnlyRequest(creator, request_headers);
+  sendHeaderOnlyRequest(creator, request_headers);
+  waitForNextUpstreamRequest();
+  auto first_request = std::move(upstream_request_);
+  // Send response headers, and end_stream if there is no response body.
+  auto first_ip = first_upstream_remote_address_;
+  auto first_upstream_connection = std::move(fake_upstream_connection_);
+  first_request->encodeHeaders(default_response_headers_, true /* no body => close */);
+  parallel_responses_[0]->waitForEndStream();
+
+  first_request->encodeHeaders(default_response_headers_, true /* no body => close */);
+  parallel_responses_[1]->waitForEndStream();
+  EXPECT_TRUE(first_request->complete());
+
+  EXPECT_TRUE(parallel_responses_[0]->complete());
+  EXPECT_TRUE(parallel_responses_[1]->complete());
+  auto expected_ip = Network::Utility::parseInternetAddress("127.0.0.2");
+  EXPECT_EQ(expected_ip->ip()->ipv4()->address(), first_ip->ip()->ipv4()->address());
+  {
+    // from cleanupUpstreamAndDownstream()
+    auto result = first_upstream_connection->close();
+    RELEASE_ASSERT(result, result.message());
+    result = first_upstream_connection->waitForDisconnect();
+    RELEASE_ASSERT(result, result.message());
+    parallel_clients_[0]->close();
+    parallel_clients_[1]->close();
+  }
+  {
+    //from ~HttpIntegrationTest
+    first_request.reset();
+    first_upstream_connection.reset();
+    fake_upstreams_.clear();
+  }
+}
 }
