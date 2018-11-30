@@ -515,6 +515,21 @@ envoy_cc_test(
 )
 
 envoy_cc_test(
+    name = "src_transparent_integration_test",
+    srcs = [
+        "src_transparent_integration_test.cc",
+        "src_transparent_integration_test.h",
+    ],
+    deps = [
+        ":http_integration_lib",
+        "//source/common/buffer:buffer_lib",
+        "//source/common/http:codec_client_lib",
+        "//source/extensions/filters/listener/proxy_protocol:config",
+        "//test/test_common:utility_lib",
+    ],
+)
+
+envoy_cc_test(
     name = "ssl_integration_test",
     srcs = [
         "ssl_integration_test.cc",

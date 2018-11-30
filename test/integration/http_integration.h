@@ -205,6 +205,8 @@ protected:
   FakeHttpConnectionPtr fake_upstream_connection_;
   // A placeholder for the first request received at upstream.
   FakeStreamPtr upstream_request_;
+  // a copy of the remote address for the first upstream connection (fake_upstream_connection_)
+  Network::Address::InstanceConstSharedPtr first_upstream_remote_address_;
   // A pointer to the request encoder, if used.
   Http::StreamEncoder* request_encoder_{nullptr};
   // The response headers sent by sendRequestAndWaitForResponse() by default.

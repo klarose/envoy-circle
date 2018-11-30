@@ -290,6 +290,8 @@ HttpIntegrationTest::waitForNextUpstreamRequest(const std::vector<uint64_t>& ups
     }
     RELEASE_ASSERT(result, result.message());
   }
+
+  first_upstream_remote_address_ = fake_upstream_connection_->connection().remoteAddress();
   // Wait for the next stream on the upstream connection.
   AssertionResult result =
       fake_upstream_connection_->waitForNewStream(*dispatcher_, upstream_request_);
