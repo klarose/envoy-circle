@@ -12,16 +12,15 @@
 #include "gtest/gtest.h"
 
 namespace Envoy {
-class SrcTransparentIntegrationTest : public HttpIntegrationTest,
-                                      public testing::Test {
+class SrcTransparentIntegrationTest : public HttpIntegrationTest, public testing::Test {
 public:
   SrcTransparentIntegrationTest()
-    // Note the v4 here. Unfortunately we can't test easily with V6 as the V6 loopback address
-    // is a /128 -- there is no easy way to bind our sender to anything else without getting
-    // CAP_NET_ADMIN permissions. While it's not ideal, the risk is fairly low, since very little
-    // of the logic we are using is specific to IPv6.
-    : HttpIntegrationTest(Http::CodecClient::Type::HTTP1, Network::Address::IpVersion::v4,
-      realTime()) {
+      // Note the v4 here. Unfortunately we can't test easily with V6 as the V6 loopback address
+      // is a /128 -- there is no easy way to bind our sender to anything else without getting
+      // CAP_NET_ADMIN permissions. While it's not ideal, the risk is fairly low, since very little
+      // of the logic we are using is specific to IPv6.
+      : HttpIntegrationTest(Http::CodecClient::Type::HTTP1, Network::Address::IpVersion::v4,
+                            realTime()) {
     // we will control the downstream remote address using proxy protocol. So, configure a listener
     // to do this.
     config_helper_.addConfigModifier(
@@ -33,6 +32,7 @@ public:
   }
 
   ~SrcTransparentIntegrationTest();
+
 protected:
   void enableSrcTransparency(size_t cluster_index = 0);
   ConnectionCreationFunction getSourceIpConnectionCreator(const std::string& ip);
@@ -55,16 +55,18 @@ protected:
   void establishUpstreamInformation(size_t num_upstreams);
 
   void cleanupConnections();
+  void cleanupUpstreamConnectionsRange(size_t start, size_t end);
+  void cleanupSingleUpstreamConnection(size_t index);
   std::vector<IntegrationCodecClientPtr> parallel_clients_;
   std::vector<IntegrationStreamDecoderPtr> parallel_responses_;
   std::vector<FakeStreamPtr> parallel_requests_;
   std::vector<Network::Address::InstanceConstSharedPtr> parallel_addresses_;
   std::vector<FakeHttpConnectionPtr> parallel_connections_;
-  Http::TestHeaderMapImpl default_request_headers_ = Http::TestHeaderMapImpl{
-                                                {":method", "GET"},
-                                                {":path", "/test/long/url"},
-                                                {":scheme", "http"},
-                                                {":authority", "host"},
-                                                {"x-lyft-user-id", "123"}};
+  Http::TestHeaderMapImpl default_request_headers_ =
+      Http::TestHeaderMapImpl{{":method", "GET"},
+                              {":path", "/test/long/url"},
+                              {":scheme", "http"},
+                              {":authority", "host"},
+                              {"x-lyft-user-id", "123"}};
 };
 } // namespace Envoy
