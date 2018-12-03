@@ -522,6 +522,9 @@ envoy_cc_test(
     ],
     deps = [
         ":http_integration_lib",
+        ":integration_lib",
+        "//include/envoy/network:address_interface",
+        "//include/envoy/network:connection_interface",
         "//source/common/buffer:buffer_lib",
         "//source/common/http:codec_client_lib",
         "//source/extensions/filters/listener/proxy_protocol:config",
