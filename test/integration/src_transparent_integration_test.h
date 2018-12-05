@@ -12,15 +12,14 @@
 #include "gtest/gtest.h"
 
 namespace Envoy {
-class SrcTransparentIntegrationTest : public HttpIntegrationTest,
-                                      public testing::TestWithParam<Http::CodecClient::Type> {
+class SrcTransparentIntegrationVersionSpecific : public HttpIntegrationTest {
 public:
-  SrcTransparentIntegrationTest()
+  SrcTransparentIntegrationVersionSpecific(Http::CodecClient::Type http_version)
       // Note the v4 here. Unfortunately we can't test easily with V6 as the V6 loopback address
       // is a /128 -- there is no easy way to bind our sender to anything else without getting
       // CAP_NET_ADMIN permissions. While it's not ideal, the risk is fairly low, since very little
       // of the logic we are using is specific to IPv6.
-      : HttpIntegrationTest(GetParam(), Network::Address::IpVersion::v4, realTime()) {
+      : HttpIntegrationTest(http_version, Network::Address::IpVersion::v4, realTime()) {
     // we will control the downstream remote address using proxy protocol. So, configure a listener
     // to do this.
     config_helper_.addConfigModifier(
@@ -30,9 +29,8 @@ public:
           filter_chain->mutable_use_proxy_proto()->set_value(true);
         });
 
-    auto version = GetParam();
-    setDownstreamProtocol(version);
-    switch(version) {
+    setDownstreamProtocol(http_version);
+    switch(http_version) {
       case Http::CodecClient::Type::HTTP1:
         setUpstreamProtocol(FakeHttpConnection::Type::HTTP1);
       break;
@@ -42,7 +40,7 @@ public:
     }
   }
 
-  ~SrcTransparentIntegrationTest();
+  ~SrcTransparentIntegrationVersionSpecific();
 
 protected:
   void enableSrcTransparency(size_t cluster_index = 0);
@@ -82,12 +80,38 @@ protected:
                               {"x-lyft-user-id", "123"}};
 };
 
+class SrcTransparentIntegrationTest: public SrcTransparentIntegrationVersionSpecific,
+                                                public testing::TestWithParam<Http::CodecClient::Type> {
+public:
+  SrcTransparentIntegrationTest() : SrcTransparentIntegrationVersionSpecific(GetParam()) {}
+};
+
+//! Used to run tests that only make sense with http1 (e.g. multiple upstreams)
+class SrcTransparentIntegrationTestHttp1: public SrcTransparentIntegrationVersionSpecific, public testing::Test {
+
+public:
+  SrcTransparentIntegrationTestHttp1()
+    : SrcTransparentIntegrationVersionSpecific(Http::CodecClient::Type::HTTP1) {}
+};
+
 //! Used to run the base http integration tests with source transparency configured.
 //! The general strategy is to shim in a proxy protocol connection builder to the existing
 //! infrastructure so that we can just reuse the tests without any extra work.
 class SrcTransparentHttpIntegrationTest : public SrcTransparentIntegrationTest {
 public:
   SrcTransparentHttpIntegrationTest();
+
+protected:
+  //! Creates a proxy protocol connection with a fixed IP and port.
+  ConnectionCreationFunction proxy_protocol_creator_;
+};
+
+//! Like SrcTransparentHttpIntegrationTest, but for Http1 tests only. Hopefully this will go
+//! away soon
+class SrcTransparentHttpIntegrationTestHttp1 : public SrcTransparentIntegrationVersionSpecific,
+                                               public testing::Test {
+public:
+  SrcTransparentHttpIntegrationTestHttp1();
 
 protected:
   //! Creates a proxy protocol connection with a fixed IP and port.
