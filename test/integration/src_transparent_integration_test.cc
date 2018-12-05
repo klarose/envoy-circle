@@ -4,6 +4,21 @@
 
 namespace Envoy {
 
+namespace {
+std::string
+codecTypeParamsToString(const testing::TestParamInfo<Http::CodecClient::Type>& params) {
+  return params.param == Http::CodecClient::Type::HTTP1 ? "HTTP1" : "HTTP2";
+}
+
+}
+INSTANTIATE_TEST_CASE_P(HTTPVersions, SrcTransparentIntegrationTest,
+                        testing::Values(Http::CodecClient::Type::HTTP1,
+                                        Http::CodecClient::Type::HTTP2), codecTypeParamsToString);
+
+INSTANTIATE_TEST_CASE_P(HTTPVersions, SrcTransparentHttpIntegrationTest,
+                        testing::Values(Http::CodecClient::Type::HTTP1,
+                                        Http::CodecClient::Type::HTTP2), codecTypeParamsToString);
+
 SrcTransparentIntegrationTest::~SrcTransparentIntegrationTest() { cleanupConnections(); }
 void SrcTransparentIntegrationTest::enableSrcTransparency(size_t cluster_index) {
   config_helper_.addConfigModifier([this, cluster_index](envoy::config::bootstrap::v2::Bootstrap&) {
@@ -26,6 +41,7 @@ SrcTransparentIntegrationTest::getSourceIpConnectionCreator(const std::string& i
 
   return creator;
 }
+
 
 HttpIntegrationTest::ConnectionCreationWithPortFunction
 SrcTransparentIntegrationTest::getPerPortSourceIpConnectionCreator(const std::string& ip) {
@@ -108,7 +124,7 @@ SrcTransparentHttpIntegrationTest::SrcTransparentHttpIntegrationTest()
   enableSrcTransparency(0);
 }
 
-TEST_F(SrcTransparentIntegrationTest, basicTransparency) {
+TEST_P(SrcTransparentIntegrationTest, basicTransparency) {
   auto creator = getSourceIpConnectionCreator("127.0.0.2");
   enableSrcTransparency(0);
   testRouterRequestAndResponseWithBody(1024, 512, false, &creator);
@@ -117,7 +133,7 @@ TEST_F(SrcTransparentIntegrationTest, basicTransparency) {
             first_upstream_remote_address_->ip()->ipv4()->address());
 }
 
-TEST_F(SrcTransparentIntegrationTest, backToBackConnectionsSameIp) {
+TEST_P(SrcTransparentIntegrationTest, backToBackConnectionsSameIp) {
   enableSrcTransparency(0);
   auto creator = getSourceIpConnectionCreator("127.0.0.2");
   sendAndReceiveRepeatable(creator);
@@ -127,7 +143,7 @@ TEST_F(SrcTransparentIntegrationTest, backToBackConnectionsSameIp) {
             first_upstream_remote_address_->ip()->ipv4()->address());
 }
 
-TEST_F(SrcTransparentIntegrationTest, backToBackConnectionsDifferentIp) {
+TEST_P(SrcTransparentIntegrationTest, backToBackConnectionsDifferentIp) {
   enableSrcTransparency(0);
   auto creator1 = getSourceIpConnectionCreator("127.0.0.2");
   sendAndReceiveRepeatable(creator1);
@@ -138,7 +154,7 @@ TEST_F(SrcTransparentIntegrationTest, backToBackConnectionsDifferentIp) {
             first_upstream_remote_address_->ip()->ipv4()->address());
 }
 
-TEST_F(SrcTransparentIntegrationTest, parallelDownstreamParallelUpstream) {
+TEST_P(SrcTransparentIntegrationTest, parallelDownstreamParallelUpstream) {
   enableSrcTransparency(0);
   initialize();
   auto creator = getSourceIpConnectionCreator("127.0.0.2");
@@ -156,7 +172,7 @@ TEST_F(SrcTransparentIntegrationTest, parallelDownstreamParallelUpstream) {
   EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[1]->ip()->ipv4()->address());
 }
 
-TEST_F(SrcTransparentIntegrationTest, parallelDownstreamSameUpstream) {
+TEST_P(SrcTransparentIntegrationTest, parallelDownstreamSameUpstream) {
   enableSrcTransparency(0);
 
   // Force use of the same upstream connection by only allowing one at a time.
@@ -178,7 +194,7 @@ TEST_F(SrcTransparentIntegrationTest, parallelDownstreamSameUpstream) {
   EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[0]->ip()->ipv4()->address());
 }
 
-TEST_F(SrcTransparentIntegrationTest, parallelDownstreamParallelUpstreamDifferentIPs) {
+TEST_P(SrcTransparentIntegrationTest, parallelDownstreamParallelUpstreamDifferentIPs) {
   enableSrcTransparency(0);
   initialize();
   auto creator1 = getSourceIpConnectionCreator("127.0.0.2");
@@ -200,7 +216,7 @@ TEST_F(SrcTransparentIntegrationTest, parallelDownstreamParallelUpstreamDifferen
 
 // this test differs from parallelDownstreamSameUpstream in that the IPs are different, which should
 // force it to create new connections.
-TEST_F(SrcTransparentIntegrationTest, parallelDownstreamSerialUpstream) {
+TEST_P(SrcTransparentIntegrationTest, parallelDownstreamSerialUpstream) {
   enableSrcTransparency(0);
 
   // Force use of the same upstream connection by only allowing one at a time.
@@ -228,7 +244,7 @@ TEST_F(SrcTransparentIntegrationTest, parallelDownstreamSerialUpstream) {
   EXPECT_EQ(expected_ip2->ip()->ipv4()->address(), parallel_addresses_[1]->ip()->ipv4()->address());
 }
 
-TEST_F(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopNewConnectionsDifferentIPs) {
+TEST_P(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopNewConnectionsDifferentIPs) {
   enableSrcTransparency(0);
   initialize();
   auto creator1 = getSourceIpConnectionCreator("127.6.0.2");
@@ -251,7 +267,7 @@ TEST_F(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopNewConnectionsDi
   EXPECT_EQ(expected_ip2->ip()->ipv4()->address(), parallel_addresses_[1]->ip()->ipv4()->address());
 }
 
-TEST_F(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopNewConnectionsSameIPs) {
+TEST_P(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopNewConnectionsSameIPs) {
   enableSrcTransparency(0);
   initialize();
   auto creator1 = getSourceIpConnectionCreator("127.6.0.2");
@@ -271,7 +287,7 @@ TEST_F(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopNewConnectionsSa
   EXPECT_EQ(expected_ip1->ip()->ipv4()->address(), parallel_addresses_[0]->ip()->ipv4()->address());
 }
 
-TEST_F(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopParallelConnectionsSameIPs) {
+TEST_P(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopParallelConnectionsSameIPs) {
   enableSrcTransparency(0);
   initialize();
   auto creator1 = getSourceIpConnectionCreator("127.6.0.2");
@@ -288,7 +304,7 @@ TEST_F(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopParallelConnecti
   EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[1]->ip()->ipv4()->address());
 }
 
-TEST_F(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopSerialConnectionsSameIPs) {
+TEST_P(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopSerialConnectionsSameIPs) {
   // Force the second request to queue by only allowing one active at a time.
   config_helper_.addConfigModifier([this](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
     auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(0);
@@ -312,103 +328,103 @@ TEST_F(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopSerialConnection
   EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[1]->ip()->ipv4()->address());
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, ValidZeroLengthContent) { testValidZeroLengthContent(); }
+TEST_P(SrcTransparentHttpIntegrationTest, ValidZeroLengthContent) { testValidZeroLengthContent(); }
 
-TEST_F(SrcTransparentHttpIntegrationTest, InvalidContentLength) { testInvalidContentLength(); }
+TEST_P(SrcTransparentHttpIntegrationTest, InvalidContentLength) { testInvalidContentLength(); }
 
-TEST_F(SrcTransparentHttpIntegrationTest, MultipleContentLengths) { testMultipleContentLengths(); }
+TEST_P(SrcTransparentHttpIntegrationTest, MultipleContentLengths) { testMultipleContentLengths(); }
 
-TEST_F(SrcTransparentHttpIntegrationTest, ComputedHealthCheck) { testComputedHealthCheck(); }
+TEST_P(SrcTransparentHttpIntegrationTest, ComputedHealthCheck) { testComputedHealthCheck(); }
 
-TEST_F(SrcTransparentHttpIntegrationTest, AddEncodedTrailers) { testAddEncodedTrailers(); }
+TEST_P(SrcTransparentHttpIntegrationTest, AddEncodedTrailers) { testAddEncodedTrailers(); }
 
-TEST_F(SrcTransparentHttpIntegrationTest, DrainClose) { testDrainClose(); }
-TEST_F(SrcTransparentHttpIntegrationTest, FlowControlOnAndGiantBody) {
+TEST_P(SrcTransparentHttpIntegrationTest, DrainClose) { testDrainClose(); }
+TEST_P(SrcTransparentHttpIntegrationTest, FlowControlOnAndGiantBody) {
   config_helper_.setBufferLimits(1024, 1024); // Set buffer limits upstream and downstream.
   testRouterRequestAndResponseWithBody(1024 * 1024, 1024 * 1024, false, &proxy_protocol_creator_);
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, RouterHeaderOnlyRequestAndResponseNoBuffer) {
+TEST_P(SrcTransparentHttpIntegrationTest, RouterHeaderOnlyRequestAndResponseNoBuffer) {
   testRouterHeaderOnlyRequestAndResponse(true, &proxy_protocol_creator_);
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, RouterRequestAndResponseLargeHeaderNoBuffer) {
+TEST_P(SrcTransparentHttpIntegrationTest, RouterRequestAndResponseLargeHeaderNoBuffer) {
   testRouterRequestAndResponseWithBody(1024, 512, true, &proxy_protocol_creator_);
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, ShutdownWithActiveConnPoolConnections) {
+TEST_P(SrcTransparentHttpIntegrationTest, ShutdownWithActiveConnPoolConnections) {
   testRouterHeaderOnlyRequestAndResponse(false, &proxy_protocol_creator_);
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, RouterUpstreamDisconnectBeforeRequestcomplete) {
+TEST_P(SrcTransparentHttpIntegrationTest, RouterUpstreamDisconnectBeforeRequestcomplete) {
   testRouterUpstreamDisconnectBeforeRequestComplete();
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, RouterUpstreamDisconnectBeforeResponseComplete) {
+TEST_P(SrcTransparentHttpIntegrationTest, RouterUpstreamDisconnectBeforeResponseComplete) {
   testRouterUpstreamDisconnectBeforeResponseComplete(&proxy_protocol_creator_);
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, RouterDownstreamDisconnectBeforeRequestComplete) {
+TEST_P(SrcTransparentHttpIntegrationTest, RouterDownstreamDisconnectBeforeRequestComplete) {
   testRouterDownstreamDisconnectBeforeRequestComplete(&proxy_protocol_creator_);
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, RouterDownstreamDisconnectBeforeResponseComplete) {
+TEST_P(SrcTransparentHttpIntegrationTest, RouterDownstreamDisconnectBeforeResponseComplete) {
   testRouterDownstreamDisconnectBeforeResponseComplete(&proxy_protocol_creator_);
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, RouterUpstreamResponseBeforeRequestComplete) {
+TEST_P(SrcTransparentHttpIntegrationTest, RouterUpstreamResponseBeforeRequestComplete) {
   testRouterUpstreamResponseBeforeRequestComplete();
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, Retry) { testRetry(); }
+TEST_P(SrcTransparentHttpIntegrationTest, Retry) { testRetry(); }
 
-TEST_F(SrcTransparentHttpIntegrationTest, RetryAttemptCount) { testRetryAttemptCountHeader(); }
+TEST_P(SrcTransparentHttpIntegrationTest, RetryAttemptCount) { testRetryAttemptCountHeader(); }
 
-TEST_F(SrcTransparentHttpIntegrationTest, EnvoyHandling100Continue) {
+TEST_P(SrcTransparentHttpIntegrationTest, EnvoyHandling100Continue) {
   testEnvoyHandling100Continue();
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, EnvoyHandlingDuplicate100Continue) {
+TEST_P(SrcTransparentHttpIntegrationTest, EnvoyHandlingDuplicate100Continue) {
   testEnvoyHandling100Continue(true);
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, EnvoyProxyingEarly100Continue) {
+TEST_P(SrcTransparentHttpIntegrationTest, EnvoyProxyingEarly100Continue) {
   testEnvoyProxying100Continue(true);
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, EnvoyProxyingLate100Continue) {
+TEST_P(SrcTransparentHttpIntegrationTest, EnvoyProxyingLate100Continue) {
   testEnvoyProxying100Continue(false);
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, RetryHittingBufferLimit) {
+TEST_P(SrcTransparentHttpIntegrationTest, RetryHittingBufferLimit) {
   testRetryHittingBufferLimit();
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, HittingDecoderFilterLimit) {
+TEST_P(SrcTransparentHttpIntegrationTest, HittingDecoderFilterLimit) {
   testHittingDecoderFilterLimit();
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, HittingEncoderFilterLimit) {
+TEST_P(SrcTransparentHttpIntegrationTest, HittingEncoderFilterLimit) {
   testHittingEncoderFilterLimit();
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, RetryHostPredicateFilter) {
+TEST_P(SrcTransparentHttpIntegrationTest, RetryHostPredicateFilter) {
   testRetryHostPredicateFilter();
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, RetryPriority) { testRetryPriority(); }
+TEST_P(SrcTransparentHttpIntegrationTest, RetryPriority) { testRetryPriority(); }
 
-TEST_F(SrcTransparentHttpIntegrationTest, GrpcRetry) { testGrpcRetry(); }
+TEST_P(SrcTransparentHttpIntegrationTest, GrpcRetry) { testGrpcRetry(); }
 
-TEST_F(SrcTransparentHttpIntegrationTest, EncodingHeaderOnlyResponse) {
+TEST_P(SrcTransparentHttpIntegrationTest, EncodingHeaderOnlyResponse) {
   testHeadersOnlyFilterEncoding();
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, DecodingHeaderOnlyResponse) {
+TEST_P(SrcTransparentHttpIntegrationTest, DecodingHeaderOnlyResponse) {
   testHeadersOnlyFilterDecoding();
 }
 
-TEST_F(SrcTransparentHttpIntegrationTest, DecodingHeaderOnlyInterleaved) {
+TEST_P(SrcTransparentHttpIntegrationTest, DecodingHeaderOnlyInterleaved) {
   testHeadersOnlyFilterInterleaved();
 }
 
