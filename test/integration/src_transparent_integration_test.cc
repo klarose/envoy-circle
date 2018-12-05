@@ -27,6 +27,19 @@ SrcTransparentIntegrationTest::getSourceIpConnectionCreator(const std::string& i
   return creator;
 }
 
+HttpIntegrationTest::ConnectionCreationWithPortFunction
+SrcTransparentIntegrationTest::getPerPortSourceIpConnectionCreator(const std::string& ip) {
+  ConnectionCreationWithPortFunction creator = [this,
+                                                ip](uint32_t port) -> Network::ClientConnectionPtr {
+    Network::ClientConnectionPtr conn = makeClientConnection(port);
+    Buffer::OwnedImpl buf("PROXY TCP4 " + ip + " 254.254.254.254 65535 1234\r\n");
+    conn->write(buf, false);
+    return conn;
+  };
+
+  return creator;
+}
+
 void SrcTransparentIntegrationTest::sendAndReceiveRepeatable(ConnectionCreationFunction creator) {
   // note: we close the upstream. Otherwise, the server shuts down on us!
   testRouterHeaderOnlyRequestAndResponse(true /* close upstream */, &creator);
@@ -86,6 +99,13 @@ void SrcTransparentIntegrationTest::cleanupUpstreamConnectionsRange(size_t start
 
 void SrcTransparentIntegrationTest::cleanupSingleUpstreamConnection(size_t index) {
   cleanupUpstreamConnectionsRange(index, index + 1);
+}
+
+SrcTransparentHttpIntegrationTest::SrcTransparentHttpIntegrationTest()
+    : proxy_protocol_creator_(getSourceIpConnectionCreator("127.0.0.3")) {
+  // override http connection creation by default so that we can shim in proxy protocol.
+  http_connection_wrapper_ = getPerPortSourceIpConnectionCreator("127.0.0.2");
+  enableSrcTransparency(0);
 }
 
 TEST_F(SrcTransparentIntegrationTest, basicTransparency) {
@@ -291,4 +311,105 @@ TEST_F(SrcTransparentIntegrationTest, upstreamFailureDoesNotStopSerialConnection
   auto expected_ip = Network::Utility::parseInternetAddress("127.6.0.2");
   EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[1]->ip()->ipv4()->address());
 }
+
+TEST_F(SrcTransparentHttpIntegrationTest, ValidZeroLengthContent) { testValidZeroLengthContent(); }
+
+TEST_F(SrcTransparentHttpIntegrationTest, InvalidContentLength) { testInvalidContentLength(); }
+
+TEST_F(SrcTransparentHttpIntegrationTest, MultipleContentLengths) { testMultipleContentLengths(); }
+
+TEST_F(SrcTransparentHttpIntegrationTest, ComputedHealthCheck) { testComputedHealthCheck(); }
+
+TEST_F(SrcTransparentHttpIntegrationTest, AddEncodedTrailers) { testAddEncodedTrailers(); }
+
+TEST_F(SrcTransparentHttpIntegrationTest, DrainClose) { testDrainClose(); }
+TEST_F(SrcTransparentHttpIntegrationTest, FlowControlOnAndGiantBody) {
+  config_helper_.setBufferLimits(1024, 1024); // Set buffer limits upstream and downstream.
+  testRouterRequestAndResponseWithBody(1024 * 1024, 1024 * 1024, false, &proxy_protocol_creator_);
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, RouterHeaderOnlyRequestAndResponseNoBuffer) {
+  testRouterHeaderOnlyRequestAndResponse(true, &proxy_protocol_creator_);
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, RouterRequestAndResponseLargeHeaderNoBuffer) {
+  testRouterRequestAndResponseWithBody(1024, 512, true, &proxy_protocol_creator_);
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, ShutdownWithActiveConnPoolConnections) {
+  testRouterHeaderOnlyRequestAndResponse(false, &proxy_protocol_creator_);
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, RouterUpstreamDisconnectBeforeRequestcomplete) {
+  testRouterUpstreamDisconnectBeforeRequestComplete();
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, RouterUpstreamDisconnectBeforeResponseComplete) {
+  testRouterUpstreamDisconnectBeforeResponseComplete(&proxy_protocol_creator_);
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, RouterDownstreamDisconnectBeforeRequestComplete) {
+  testRouterDownstreamDisconnectBeforeRequestComplete(&proxy_protocol_creator_);
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, RouterDownstreamDisconnectBeforeResponseComplete) {
+  testRouterDownstreamDisconnectBeforeResponseComplete(&proxy_protocol_creator_);
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, RouterUpstreamResponseBeforeRequestComplete) {
+  testRouterUpstreamResponseBeforeRequestComplete();
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, Retry) { testRetry(); }
+
+TEST_F(SrcTransparentHttpIntegrationTest, RetryAttemptCount) { testRetryAttemptCountHeader(); }
+
+TEST_F(SrcTransparentHttpIntegrationTest, EnvoyHandling100Continue) {
+  testEnvoyHandling100Continue();
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, EnvoyHandlingDuplicate100Continue) {
+  testEnvoyHandling100Continue(true);
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, EnvoyProxyingEarly100Continue) {
+  testEnvoyProxying100Continue(true);
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, EnvoyProxyingLate100Continue) {
+  testEnvoyProxying100Continue(false);
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, RetryHittingBufferLimit) {
+  testRetryHittingBufferLimit();
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, HittingDecoderFilterLimit) {
+  testHittingDecoderFilterLimit();
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, HittingEncoderFilterLimit) {
+  testHittingEncoderFilterLimit();
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, RetryHostPredicateFilter) {
+  testRetryHostPredicateFilter();
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, RetryPriority) { testRetryPriority(); }
+
+TEST_F(SrcTransparentHttpIntegrationTest, GrpcRetry) { testGrpcRetry(); }
+
+TEST_F(SrcTransparentHttpIntegrationTest, EncodingHeaderOnlyResponse) {
+  testHeadersOnlyFilterEncoding();
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, DecodingHeaderOnlyResponse) {
+  testHeadersOnlyFilterDecoding();
+}
+
+TEST_F(SrcTransparentHttpIntegrationTest, DecodingHeaderOnlyInterleaved) {
+  testHeadersOnlyFilterInterleaved();
+}
+
 } // namespace Envoy

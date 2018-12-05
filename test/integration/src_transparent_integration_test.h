@@ -36,6 +36,7 @@ public:
 protected:
   void enableSrcTransparency(size_t cluster_index = 0);
   ConnectionCreationFunction getSourceIpConnectionCreator(const std::string& ip);
+  ConnectionCreationWithPortFunction getPerPortSourceIpConnectionCreator(const std::string& ip);
 
   void sendAndReceiveRepeatable(ConnectionCreationFunction creator);
   //! Connects to the server using @c creator, then sends the headers from @c. The resulting client
@@ -68,5 +69,17 @@ protected:
                               {":scheme", "http"},
                               {":authority", "host"},
                               {"x-lyft-user-id", "123"}};
+};
+
+//! Used to run the base http integration tests with source transparency configured.
+//! The general strategy is to shim in a proxy protocol connection builder to the existing
+//! infrastructure so that we can just reuse the tests without any extra work.
+class SrcTransparentHttpIntegrationTest : public SrcTransparentIntegrationTest {
+public:
+  SrcTransparentHttpIntegrationTest();
+
+protected:
+  //! Creates a proxy protocol connection with a fixed IP and port.
+  ConnectionCreationFunction proxy_protocol_creator_;
 };
 } // namespace Envoy

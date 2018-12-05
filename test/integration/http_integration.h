@@ -114,6 +114,8 @@ protected:
   void cleanupUpstreamAndDownstream();
 
   typedef std::function<Network::ClientConnectionPtr()> ConnectionCreationFunction;
+  typedef std::function<Network::ClientConnectionPtr(uint32_t port)>
+      ConnectionCreationWithPortFunction;
 
   void testRouterRedirect();
   void testRouterDirectResponse();
@@ -215,5 +217,9 @@ protected:
       {":method", "GET"}, {":path", "/test/long/url"}, {":scheme", "http"}, {":authority", "host"}};
   // The codec type for the client-to-Envoy connection
   Http::CodecClient::Type downstream_protocol_{Http::CodecClient::Type::HTTP1};
+
+  //! Lets us override the behaviour of functions creating http connections per-port so that we may
+  //! easily change their behaviour for subclasses.
+  absl::optional<ConnectionCreationWithPortFunction> http_connection_wrapper_;
 };
 } // namespace Envoy

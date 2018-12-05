@@ -192,6 +192,10 @@ void IntegrationCodecClient::ConnectionCallbacks::onEvent(Network::ConnectionEve
 }
 
 IntegrationCodecClientPtr HttpIntegrationTest::makeHttpConnection(uint32_t port) {
+  if (http_connection_wrapper_.has_value()) {
+    return makeHttpConnection(http_connection_wrapper_.value()(port));
+  }
+
   return makeHttpConnection(makeClientConnection(port));
 }
 
@@ -289,9 +293,9 @@ HttpIntegrationTest::waitForNextUpstreamRequest(const std::vector<uint64_t>& ups
       }
     }
     RELEASE_ASSERT(result, result.message());
+    first_upstream_remote_address_ = fake_upstream_connection_->connection().remoteAddress();
   }
 
-  first_upstream_remote_address_ = fake_upstream_connection_->connection().remoteAddress();
   // Wait for the next stream on the upstream connection.
   AssertionResult result =
       fake_upstream_connection_->waitForNewStream(*dispatcher_, upstream_request_);
@@ -1997,7 +2001,6 @@ name: decode-headers-only
   EXPECT_STREQ("503", response->headers().Status()->value().c_str());
   EXPECT_EQ(0, upstream_request_->body().length());
 }
-
 void HttpIntegrationTest::testDownstreamResetBeforeResponseComplete() {
   initialize();
   codec_client_ = makeHttpConnection(lookupPort("http"));
