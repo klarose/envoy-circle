@@ -5,29 +5,30 @@
 namespace Envoy {
 
 namespace {
-std::string
-codecTypeParamsToString(const testing::TestParamInfo<Http::CodecClient::Type>& params) {
+std::string codecTypeParamsToString(const testing::TestParamInfo<Http::CodecClient::Type>& params) {
   return params.param == Http::CodecClient::Type::HTTP1 ? "HTTP1" : "HTTP2";
 }
 
-}
+} // namespace
 INSTANTIATE_TEST_CASE_P(HTTPVersions, SrcTransparentIntegrationTest,
                         testing::Values(Http::CodecClient::Type::HTTP1,
-                                        Http::CodecClient::Type::HTTP2), codecTypeParamsToString);
+                                        Http::CodecClient::Type::HTTP2),
+                        codecTypeParamsToString);
 
 INSTANTIATE_TEST_CASE_P(HTTPVersions, SrcTransparentHttpIntegrationTest,
                         testing::Values(Http::CodecClient::Type::HTTP1,
-                                        Http::CodecClient::Type::HTTP2), codecTypeParamsToString);
+                                        Http::CodecClient::Type::HTTP2),
+                        codecTypeParamsToString);
 
-SrcTransparentIntegrationVersionSpecific::~SrcTransparentIntegrationVersionSpecific() { cleanupConnections(); }
+SrcTransparentIntegrationVersionSpecific::~SrcTransparentIntegrationVersionSpecific() {
+  cleanupConnections();
+}
 void SrcTransparentIntegrationVersionSpecific::enableSrcTransparency(size_t cluster_index) {
-  config_helper_.addConfigModifier([this, cluster_index](envoy::config::bootstrap::v2::Bootstrap&) {
-    // auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(cluster_index);
-    // cluster->mutable_upstream_connection_options()->set_src_transparent(true);
-    // cluster->mutable_upstream_bind_config()->mutable_freebind()->set_value(true);
-    // cluster->mutable_upstream_bind_config()->mutable_source_address()->set_address("0.0.0.0");
-    // cluster->mutable_upstream_bind_config()->mutable_source_address()->set_port_value(0);
-  });
+  config_helper_.addConfigModifier(
+      [this, cluster_index](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
+        auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(cluster_index);
+        cluster->mutable_upstream_connection_options()->set_src_transparent(true);
+      });
 }
 
 HttpIntegrationTest::ConnectionCreationFunction
@@ -42,9 +43,9 @@ SrcTransparentIntegrationVersionSpecific::getSourceIpConnectionCreator(const std
   return creator;
 }
 
-
 HttpIntegrationTest::ConnectionCreationWithPortFunction
-SrcTransparentIntegrationVersionSpecific::getPerPortSourceIpConnectionCreator(const std::string& ip) {
+SrcTransparentIntegrationVersionSpecific::getPerPortSourceIpConnectionCreator(
+    const std::string& ip) {
   ConnectionCreationWithPortFunction creator = [this,
                                                 ip](uint32_t port) -> Network::ClientConnectionPtr {
     Network::ClientConnectionPtr conn = makeClientConnection(port);
@@ -56,15 +57,16 @@ SrcTransparentIntegrationVersionSpecific::getPerPortSourceIpConnectionCreator(co
   return creator;
 }
 
-void SrcTransparentIntegrationVersionSpecific::sendAndReceiveRepeatable(ConnectionCreationFunction creator) {
+void SrcTransparentIntegrationVersionSpecific::sendAndReceiveRepeatable(
+    ConnectionCreationFunction creator) {
   // note: we close the upstream. Otherwise, the server shuts down on us!
   testRouterHeaderOnlyRequestAndResponse(true /* close upstream */, &creator);
   cleanupUpstreamAndDownstream();
   fake_upstream_connection_ = nullptr;
 }
 
-void SrcTransparentIntegrationVersionSpecific::sendHeaderOnlyRequest(ConnectionCreationFunction creator,
-                                                          const Http::HeaderMap& headers) {
+void SrcTransparentIntegrationVersionSpecific::sendHeaderOnlyRequest(
+    ConnectionCreationFunction creator, const Http::HeaderMap& headers) {
   auto codec_client = makeHttpConnection(creator());
   auto response = codec_client->makeHeaderOnlyRequest(headers);
   parallel_clients_.emplace_back(std::move(codec_client));
@@ -99,7 +101,8 @@ void SrcTransparentIntegrationVersionSpecific::cleanupConnections() {
   parallel_responses_.clear();
 }
 
-void SrcTransparentIntegrationVersionSpecific::cleanupUpstreamConnectionsRange(size_t start, size_t end) {
+void SrcTransparentIntegrationVersionSpecific::cleanupUpstreamConnectionsRange(size_t start,
+                                                                               size_t end) {
   // the order here is important. See cleanupUpstreamAndDownstream
   std::for_each(std::next(parallel_connections_.begin(), start),
                 std::next(parallel_connections_.begin(), end), [](auto& connection) {
@@ -318,7 +321,6 @@ TEST_F(SrcTransparentIntegrationTestHttp1, upstreamFailureDoesNotStopSerialConne
   EXPECT_EQ(expected_ip->ip()->ipv4()->address(), parallel_addresses_[1]->ip()->ipv4()->address());
 }
 
-
 TEST_P(SrcTransparentHttpIntegrationTest, ValidZeroLengthContent) { testValidZeroLengthContent(); }
 
 TEST_P(SrcTransparentHttpIntegrationTest, InvalidContentLength) { testInvalidContentLength(); }
@@ -430,7 +432,6 @@ TEST_F(SrcTransparentHttpIntegrationTestHttp1, EncodingHeaderOnlyResponse) {
 TEST_F(SrcTransparentHttpIntegrationTestHttp1, RouterDownstreamDisconnectBeforeRequestComplete) {
   testRouterDownstreamDisconnectBeforeRequestComplete(&proxy_protocol_creator_);
 }
-
 
 TEST_F(SrcTransparentHttpIntegrationTestHttp1, RouterDownstreamDisconnectBeforeResponseComplete) {
   testRouterDownstreamDisconnectBeforeResponseComplete(&proxy_protocol_creator_);

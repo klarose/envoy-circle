@@ -30,13 +30,13 @@ public:
         });
 
     setDownstreamProtocol(http_version);
-    switch(http_version) {
-      case Http::CodecClient::Type::HTTP1:
-        setUpstreamProtocol(FakeHttpConnection::Type::HTTP1);
+    switch (http_version) {
+    case Http::CodecClient::Type::HTTP1:
+      setUpstreamProtocol(FakeHttpConnection::Type::HTTP1);
       break;
-      case Http::CodecClient::Type::HTTP2:
-        setUpstreamProtocol(FakeHttpConnection::Type::HTTP2);
-        break;
+    case Http::CodecClient::Type::HTTP2:
+      setUpstreamProtocol(FakeHttpConnection::Type::HTTP2);
+      break;
     }
   }
 
@@ -80,18 +80,19 @@ protected:
                               {"x-lyft-user-id", "123"}};
 };
 
-class SrcTransparentIntegrationTest: public SrcTransparentIntegrationVersionSpecific,
-                                                public testing::TestWithParam<Http::CodecClient::Type> {
+class SrcTransparentIntegrationTest : public SrcTransparentIntegrationVersionSpecific,
+                                      public testing::TestWithParam<Http::CodecClient::Type> {
 public:
   SrcTransparentIntegrationTest() : SrcTransparentIntegrationVersionSpecific(GetParam()) {}
 };
 
 //! Used to run tests that only make sense with http1 (e.g. multiple upstreams)
-class SrcTransparentIntegrationTestHttp1: public SrcTransparentIntegrationVersionSpecific, public testing::Test {
+class SrcTransparentIntegrationTestHttp1 : public SrcTransparentIntegrationVersionSpecific,
+                                           public testing::Test {
 
 public:
   SrcTransparentIntegrationTestHttp1()
-    : SrcTransparentIntegrationVersionSpecific(Http::CodecClient::Type::HTTP1) {}
+      : SrcTransparentIntegrationVersionSpecific(Http::CodecClient::Type::HTTP1) {}
 };
 
 //! Used to run the base http integration tests with source transparency configured.
