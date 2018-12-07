@@ -1960,6 +1960,20 @@ TEST_F(ClusterInfoImplTest, TestTransparentSocketOptions) {
                                        envoy::api::v2::core::SocketOption::STATE_PREBIND);
 }
 
+TEST_F(ClusterInfoImplTest, TestSrcTransparentFeatureNotPresent) {
+  auto cluster = makeCluster(strictDnsClusterWithAttrYaml(""));
+  EXPECT_FALSE(cluster->info()->features() & ClusterInfoImpl::Features::SRC_TRANSPARENT);
+}
+
+TEST_F(ClusterInfoImplTest, TestSrcTransparentFeature) {
+  auto cluster = makeCluster(strictDnsClusterWithAttrYaml(R"EOF(
+    upstream_connection_options:
+      src_transparent: true
+  )EOF"));
+
+  EXPECT_TRUE(cluster->info()->features() & ClusterInfoImpl::Features::SRC_TRANSPARENT);
+}
+
 // Validate empty singleton for HostsPerLocalityImpl.
 TEST(HostsPerLocalityImpl, Empty) {
   EXPECT_FALSE(HostsPerLocalityImpl::empty()->hasLocalLocality());

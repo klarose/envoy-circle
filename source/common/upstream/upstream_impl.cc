@@ -70,6 +70,9 @@ uint64_t parseFeatures(const envoy::api::v2::Cluster& config) {
   if (config.close_connections_on_host_health_failure()) {
     features |= ClusterInfoImpl::Features::CLOSE_CONNECTIONS_ON_HOST_HEALTH_FAILURE;
   }
+  if (config.upstream_connection_options().src_transparent()) {
+    features |= ClusterInfoImpl::Features::SRC_TRANSPARENT;
+  }
   return features;
 }
 
