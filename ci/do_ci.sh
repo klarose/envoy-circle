@@ -30,6 +30,22 @@ function bazel_with_collection() {
   fi
 }
 
+function bazel_docker_with_collection() {
+  declare -r BAZEL_OUTPUT="${ENVOY_SRCDIR}"/bazel.output.txt
+  RUN_REMOTE=yes ./tools/bazel-test-docker.sh $* | tee "${BAZEL_OUTPUT}"
+  declare BAZEL_STATUS="${PIPESTATUS[0]}"
+  if [ "${BAZEL_STATUS}" != "0" ]
+  then
+    declare -r FAILED_TEST_LOGS="$(grep "  /build.*test.log" "${BAZEL_OUTPUT}" | sed -e 's/  \/build.*\/testlogs\/\(.*\)/\1/')"
+    cd bazel-testlogs
+    for f in ${FAILED_TEST_LOGS}
+    do
+      cp --parents -f $f "${ENVOY_FAILED_TEST_LOGS}"
+    done
+    exit "${BAZEL_STATUS}"
+  fi
+}
+
 function bazel_release_binary_build() {
   echo "Building..."
   cd "${ENVOY_CI_DIR}"
@@ -137,9 +153,8 @@ elif [[ "$1" == "bazel.test_priv" ]]; then
   setup_clang_toolchain
   echo "bazel TSAN debug build with tests..."
   echo "Building and testing..."
-  RUN_REMOTE=yes ./tools/bazel-test-docker.sh @envoy//test/integration:src_transparent_integration_test \
+  bazel_docker_with_collection @envoy//test/integration:src_transparent_integration_test \
     ${BAZEL_TEST_OPTIONS} -c dbg --config=clang-tsan 
-
   exit 0
 elif [[ "$1" == "bazel.dev" ]]; then
   setup_clang_toolchain
