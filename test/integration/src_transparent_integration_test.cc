@@ -11,21 +11,17 @@ std::string codecTypeParamsToString(const testing::TestParamInfo<Http::CodecClie
 
 } // namespace
 INSTANTIATE_TEST_CASE_P(HTTPVersions, SrcTransparentIntegrationTest,
-                        testing::Values(Http::CodecClient::Type::HTTP1,
-                                        Http::CodecClient::Type::HTTP2),
-                        codecTypeParamsToString);
+                        testing::Values(Http::CodecClient::Type::HTTP1), codecTypeParamsToString);
 
 INSTANTIATE_TEST_CASE_P(HTTPVersions, SrcTransparentHttpIntegrationTest,
-                        testing::Values(Http::CodecClient::Type::HTTP1,
-                                        Http::CodecClient::Type::HTTP2),
-                        codecTypeParamsToString);
+                        testing::Values(Http::CodecClient::Type::HTTP1), codecTypeParamsToString);
 
 SrcTransparentIntegrationVersionSpecific::~SrcTransparentIntegrationVersionSpecific() {
   cleanupConnections();
 }
 void SrcTransparentIntegrationVersionSpecific::enableSrcTransparency(size_t cluster_index) {
   config_helper_.addConfigModifier(
-      [this, cluster_index](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
+      [cluster_index](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
         auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(cluster_index);
         cluster->mutable_upstream_connection_options()->set_src_transparent(true);
       });
@@ -169,7 +165,7 @@ TEST_P(SrcTransparentIntegrationTest, parallelDownstreamSameUpstream) {
   enableSrcTransparency(0);
 
   // Force use of the same upstream connection by only allowing one at a time.
-  config_helper_.addConfigModifier([this](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
+  config_helper_.addConfigModifier([](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
     auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(0);
     cluster->mutable_circuit_breakers()->add_thresholds()->mutable_max_connections()->set_value(1);
   });
@@ -213,7 +209,7 @@ TEST_P(SrcTransparentIntegrationTest, parallelDownstreamSerialUpstream) {
   enableSrcTransparency(0);
 
   // Force use of the same upstream connection by only allowing one at a time.
-  config_helper_.addConfigModifier([this](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
+  config_helper_.addConfigModifier([](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
     auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(0);
     cluster->mutable_circuit_breakers()->add_thresholds()->mutable_max_connections()->set_value(1);
   });
@@ -299,7 +295,7 @@ TEST_F(SrcTransparentIntegrationTestHttp1, upstreamFailureDoesNotStopParallelCon
 
 TEST_F(SrcTransparentIntegrationTestHttp1, upstreamFailureDoesNotStopSerialConnectionsSameIPs) {
   // Force the second request to queue by only allowing one active at a time.
-  config_helper_.addConfigModifier([this](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
+  config_helper_.addConfigModifier([](envoy::config::bootstrap::v2::Bootstrap& bootstrap) {
     auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(0);
     cluster->mutable_circuit_breakers()->add_thresholds()->mutable_max_connections()->set_value(1);
   });
