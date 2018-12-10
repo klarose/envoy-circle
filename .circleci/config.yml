@@ -9,18 +9,7 @@ executors:
     working_directory: /source
 
 jobs:
-   release:
-     executor: ubuntu-build
-     steps:
-       - run: rm -rf /home/circleci/project/.git # CircleCI git caching is likely broken
-       - checkout
-       - run: ci/do_circle_ci.sh bazel.release
-       - setup_remote_docker
-       - run: ci/docker_push.sh
-       - run: ci/docker_tag.sh
-       - store_artifacts:
-           path: /build/envoy/generated/failed-testlogs
-   test_priv:
+  test_priv:
      executor: ubuntu-build
      steps:
        - run: rm -rf /home/circleci/project/.git # CircleCI git caching is likely broken
@@ -42,8 +31,4 @@ workflows:
   version: 2
   all:
     jobs:
-      - release:
-          filters:
-            tags:
-              only: /^v.*/
       - test_priv
