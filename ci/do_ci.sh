@@ -31,6 +31,7 @@ function bazel_with_collection() {
 }
 
 function bazel_docker_with_collection() {
+  set -x
   declare -r BAZEL_OUTPUT="${ENVOY_SRCDIR}"/bazel.output.txt
   RUN_REMOTE=yes ./tools/bazel-test-docker.sh $* | tee "${BAZEL_OUTPUT}"
   declare BAZEL_STATUS="${PIPESTATUS[0]}"
@@ -154,7 +155,7 @@ elif [[ "$1" == "bazel.test_priv" ]]; then
   echo "bazel TSAN debug build with tests..."
   echo "Building and testing..."
   bazel_docker_with_collection @envoy//test/integration:src_transparent_integration_test \
-    ${BAZEL_TEST_OPTIONS} -c dbg --config=clang-tsan 
+    ${BAZEL_TEST_OPTIONS} -c dbg --config=clang-tsan
   exit 0
 elif [[ "$1" == "bazel.dev" ]]; then
   setup_clang_toolchain
