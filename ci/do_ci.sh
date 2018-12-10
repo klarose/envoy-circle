@@ -133,6 +133,15 @@ elif [[ "$1" == "bazel.tsan" ]]; then
   bazel_with_collection test ${BAZEL_TEST_OPTIONS} -c dbg --config=clang-tsan @envoy//test/... \
     //:echo2_integration_test //:envoy_binary_test
   exit 0
+elif [[ "$1" == "bazel.test_priv" ]]; then
+  setup_clang_toolchain
+  echo "bazel TSAN debug build with tests..."
+  cd "${ENVOY_FILTER_EXAMPLE_SRCDIR}"
+  echo "Building and testing..."
+  RUN_REMOTE=yes ./tools/bazel-test-docker.sh @envoy//test/integration:src_transparent_integration_test \
+    ${BAZEL_TEST_OPTIONS} -c dbg --config=clang-tsan 
+
+  exit 0
 elif [[ "$1" == "bazel.dev" ]]; then
   setup_clang_toolchain
   # This doesn't go into CI but is available for developer convenience.
