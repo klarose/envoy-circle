@@ -136,7 +136,6 @@ elif [[ "$1" == "bazel.tsan" ]]; then
 elif [[ "$1" == "bazel.test_priv" ]]; then
   setup_clang_toolchain
   echo "bazel TSAN debug build with tests..."
-  cd "${ENVOY_FILTER_EXAMPLE_SRCDIR}"
   echo "Building and testing..."
   RUN_REMOTE=yes ./tools/bazel-test-docker.sh @envoy//test/integration:src_transparent_integration_test \
     ${BAZEL_TEST_OPTIONS} -c dbg --config=clang-tsan 
